@@ -84,7 +84,7 @@ const Register = () => {
         >
           <option value="">Select role</option>
           <option value="traveler">Traveler</option>
-          <option value="business owner">Business Owner</option>
+          <option value="business owner">Travle Agent</option>
         </select>
         {errors.role && (
           <span className="text-red-500">{errors.role.message}</span>

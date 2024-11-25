@@ -1,6 +1,6 @@
 import express, { Request, Response } from "express";
 import Hotel from "../models/hotel.js";
-import { BookingType, HotelSearchResponse } from "../shared/types";
+import { BookingType, HotelSearchResponse } from "../shared/types.js";
 import { param, validationResult } from "express-validator";
 import Stripe from "stripe";
 import verifyToken from "../middleware/auth.js";

@@ -40,7 +40,7 @@ export const AppContextProvider = ({
     {
       retry: false,
       onSuccess: (userData) => {
-        console.log("User Data:", userData);
+        // console.log("User Data:", userData);
         setUserRole(userData.role); // Assuming `role` is part of the user data returned
         setUser(userData); // Store the user data
       },

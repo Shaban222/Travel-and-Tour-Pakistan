@@ -37,8 +37,10 @@ router.post(
   upload.array("imageFiles", 6),
   async (req: Request, res: Response) => {
     try {
+      console.log("Req.Body",req.body)
+
       const imageFiles = req.files as Express.Multer.File[];
-      const newHotel: HotelType = req.body;
+      const newHotel = req.body;
 
       const imageUrls = await uploadImages(imageFiles);
 
@@ -46,6 +48,7 @@ router.post(
       newHotel.lastUpdated = new Date();
       newHotel.userId = req.userId;
 
+      console.log("New Hotel", newHotel)
       const hotel = new Hotel(newHotel);
       await hotel.save();
 

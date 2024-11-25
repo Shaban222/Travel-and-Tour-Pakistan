@@ -1,94 +1,225 @@
 import express, { Request, Response } from "express";
+import multer from "multer";
+import cloudinary from "cloudinary";
+import mongoose from "mongoose";
+import { body, validationResult } from "express-validator";
 import Package from "../models/package.js";
-import { param, validationResult } from "express-validator";
 import verifyToken from "../middleware/auth.js";
- import { PackageSearchResponse } from "../shared/types";
+import { PackageType } from "../shared/types.js";
 
 const router = express.Router();
 
-// Search for packages
-router.get("/search", async (req: Request, res: Response) => {
-  try {
-    const query = constructSearchQuery(req.query);
+// Multer setup
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+});
 
-    let sortOptions = {};
-    switch (req.query.sortOption) {
-      case "priceAsc":
-        sortOptions = { price: 1 };
-        break;
-      case "priceDesc":
-        sortOptions = { price: -1 };
-        break;
+// Middleware to ensure the user is authenticated
+router.use(verifyToken);
+
+// Helper for uploading images to Cloudinary
+// const uploadImageToCloudinary = (fileBuffer: Buffer, folder: string): Promise<string> => {
+//   return new Promise((resolve, reject) => {
+//     const uploadStream = cloudinary.uploader.upload_stream(
+//       { folder },
+//       (error, result) => {
+//         if (error) {
+//           reject(error);
+//         } else if (result) {
+//           resolve(result.secure_url);
+//         }
+//       }
+//     );
+//     uploadStream.end(fileBuffer);
+//   });
+// };
+
+// Create a new package
+router.post(
+  "/",
+  [
+    body("packageName").notEmpty().withMessage("Package name is required"),
+    body("packageDescription").notEmpty().withMessage("Package description is required"),
+    body("locations").isArray({ min: 1 }).withMessage("At least one location is required"),
+    body("days").isNumeric().withMessage("Number of days must be a number"),
+    body("type").notEmpty().withMessage("Package type is required"),
+    body("vehicle").notEmpty().withMessage("Vehicle type is required"),
+    body("pricePerPerson").isNumeric().withMessage("Price per person must be a number"),
+    body("facilities").isArray().withMessage("Facilities are required"),
+    body("departureDate").notEmpty().withMessage("Departure date is required"),
+    body("arrivalDate").notEmpty().withMessage("Arrival date is required"),
+  ],
+  // upload.array("imageFiles", 6),
+  async (req: Request, res: Response) => {
+    console.log("Packages Before Validation",req.body)
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+    console.log("Packages After Validation",req.body)
+
+    try {
+      const {
+        packageName,
+        packageDescription,
+        locations,
+        days,
+        type,
+        vehicle,
+        facilities,
+        pricePerPerson,
+        departureDate,
+        arrivalDate,
+      } = req.body;
+
+      // Handle image uploads
+      // const imageUrls = await Promise.all(
+      //   imageFiles.map((file) => uploadImageToCloudinary(file.buffer, "packages"))
+      // );
+      // const imageFiles = req.files as Express.Multer.File[];
+      // const imageUrls = await uploadImages(imageFiles);
+      // console.log("imageFiles",imageFiles)
+
+      const newPackage: PackageType = {
+        _id: new mongoose.Types.ObjectId().toString(),
+        userId: req.userId,
+        packageName,
+        packageDescription,
+        locations: locations,
+        days: Number(days),
+        type,
+        vehicle,
+        facilities: facilities,
+        pricePerPerson: Number(pricePerPerson),
+        departureDate: new Date(departureDate),
+        arrivalDate: new Date(arrivalDate),
+        // imageUrls,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        bookings: [],
+        totalCost: Number(pricePerPerson) * Number(days),
+      };
+
+      const travelPackage = new Package(newPackage);
+      await travelPackage.save();
+
+      res.status(201).json(travelPackage);
+    } catch (error) {
+      console.error("Error creating package:", error);
+      res.status(500).json({ error: "Failed to create package" });
+    }
+  }
+);
+
+// Update a package
+router.put("/:id", upload.array("imageFiles", 6), async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  try {
+    const existingPackage = await Package.findOne({ _id: id, userId: req.userId });
+
+    if (!existingPackage) {
+      return res.status(404).json({ error: "Package not found" });
     }
 
-    const pageSize = 5;
-    const pageNumber = parseInt(req.query.page ? req.query.page.toString() : "1");
-    const skip = (pageNumber - 1) * pageSize;
+    // const imageFiles = req.files as Express.Multer.File[];
+    // const newImageUrls = await Promise.all(
+    //   imageFiles.map((file) => uploadImageToCloudinary(file.buffer, "packages"))
+    // );
 
-    const packages = await Package.find(query).sort(sortOptions).skip(skip).limit(pageSize);
-    const total = await Package.countDocuments(query);
-
-    const response
-    // : PackageSearchResponse 
-    = {
-      data: packages,
-      pagination: {
-        total,
-        page: pageNumber,
-        pages: Math.ceil(total / pageSize),
-      },
+    const updatedPackageData = {
+      ...req.body,
+      // imageUrls: [...existingPackage.imageUrls, ...newImageUrls],
+      updatedAt: new Date(),
     };
 
-    res.json(response);
+    const updatedPackage = await Package.findOneAndUpdate(
+      { _id: id, userId: req.userId },
+      updatedPackageData,
+      { new: true }
+    );
+
+    res.status(200).json(updatedPackage);
   } catch (error) {
-    console.log("error", error);
-    res.status(500).json({ message: "Something went wrong" });
+    console.error("Error updating package:", error);
+    res.status(500).json({ error: "Failed to update package" });
   }
 });
 
-// Get all packages
+// Other routes remain unchanged
+// fetch all packages
 router.get("/", async (req: Request, res: Response) => {
   try {
-    const packages = await Package.find().sort("-lastUpdated");
-    res.json(packages);
+    const packages = await Package.find();
+    res.status(200).json(packages);
   } catch (error) {
-    console.log("error", error);
-    res.status(500).json({ message: "Error fetching packages" });
+    console.error("Error fetching packages:", error);
+    res.status(500).json({ error: "Failed to fetch packages" });
   }
 });
 
-// Get a package by ID
-router.get("/:id", [param("id").notEmpty().withMessage("Package ID is required")], async (req: Request, res: Response) => {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    return res.status(400).json({ errors: errors.array() });
-  }
+// fetch all packages made by an owner by using owner's userId.
+router.get("/for-owners", async (req: Request, res: Response) => {
+  try {
+    const ownerPackages = await Package.find({ userId: req.userId });
 
-  const id = req.params.id.toString();
+    res.status(200).json(ownerPackages);
+  } catch (error) {
+    console.error("Error fetching owner's package:", error);
+    res.status(500).json({ error: "Failed to fetch package" });
+  }
+});
+
+router.get("/:id", async (req: Request, res: Response) => {
+  const { id } = req.params;
 
   try {
-    const packageItem = await Package.findById(id);
-    res.json(packageItem);
+    const travelPackage = await Package.findOne({ _id: id });
+
+    if (!travelPackage) {
+      return res.status(404).json({ error: "Package not found" });
+    }
+    console.log("Package",travelPackage)
+    res.status(200).json(travelPackage);
   } catch (error) {
-    console.log(error);
-    res.status(500).json({ message: "Error fetching package" });
+    console.error("Error fetching package:", error);
+    res.status(500).json({ error: "Failed to fetch package" });
   }
 });
 
-const constructSearchQuery = (queryParams: any) => {
-  let constructedQuery: any = {};
 
-  if (queryParams.destination) {
-    constructedQuery.destination = new RegExp(queryParams.destination, "i");
+router.delete("/:id", async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  try {
+    const deletedPackage = await Package.findOneAndDelete({
+      _id: id,
+    });
+
+    if (!deletedPackage) {
+      return res.status(404).json({ error: "Package not found" });
+    }
+
+    res.status(200).json(deletedPackage);
+  } catch (error) {
+    console.error("Error deleting package:", error);
+    res.status(500).json({ error: "Failed to delete package" });
   }
+});
 
-  if (queryParams.priceRange) {
-    constructedQuery.price = {
-      $lte: parseInt(queryParams.priceRange),
-    };
-  }
+async function uploadImages(imageFiles: Express.Multer.File[]) {
+  const uploadPromises = imageFiles.map(async (image) => {
+    const b64 = Buffer.from(image.buffer).toString("base64");
+    let dataURI = "data:" + image.mimetype + ";base64," + b64;
+    const res = await cloudinary.v2.uploader.upload(dataURI);
+    return res.url;
+  });
 
-  return constructedQuery;
-};
+  const imageUrls = await Promise.all(uploadPromises);
+  return imageUrls;
+}
+
 
 export default router;
